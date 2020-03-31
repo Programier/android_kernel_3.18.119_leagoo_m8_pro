@@ -81,8 +81,3 @@ obj-$(CONFIG_TOUCHSCREEN_W90X900)	+= w90p910_ts.o
 obj-$(CONFIG_TOUCHSCREEN_TPS6507X)	+= tps6507x-ts.o
 obj-$(CONFIG_TOUCHSCREEN_ZFORCE)	+= zforce_ts.o
 
-ifeq ($(CONFIG_TOUCHSCREEN_MTK_GSLX68X),y)
-obj-y += gsl_point_id.o
-$(obj)/gsl_point_id.o: $(srctree)/$(obj)/gsl_point_id
-	cp $(srctree)/$(obj)/gsl_point_id  $(obj)/gsl_point_id.o
-endif

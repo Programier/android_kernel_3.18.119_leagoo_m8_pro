@@ -9,4 +9,4 @@ obj-y   +=  tpd_init.o
 obj-y   +=  tpd_misc.o
 obj-y   +=  tpd_setting.o
 obj-$(CONFIG_TOUCHSCREEN_MTK_FT5X0X)	+=  ft5x0x/
-obj-$(CONFIG_TOUCHSCREEN_MTK_GSLX68X)	+=  GSLx68x/
+obj-$(CONFIG_TOUCHSCREEN_MTK_GSLX68X)	+=  gslX68X_Pie/
