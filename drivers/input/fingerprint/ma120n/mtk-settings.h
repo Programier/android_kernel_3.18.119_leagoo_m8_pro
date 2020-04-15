@@ -50,7 +50,7 @@
 #include <mt-plat/mt_gpio.h>
 
 //macro settings
-#define MA_DRV_NAME             "madev"
+#define MA_DRV_NAME             "madev_ma120n"
 
 #define MA_DTS_NAME            "mediatek,fingerprint"
 #define MA_EINT_DTS_NAME        "mediatek,fingerprint"

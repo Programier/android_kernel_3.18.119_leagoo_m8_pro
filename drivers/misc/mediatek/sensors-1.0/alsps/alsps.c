@@ -16,6 +16,7 @@
 struct alsps_context *alsps_context_obj/* = NULL*/;
 struct platform_device *pltfm_dev;
 int last_als_report_data = -1;
+static atomic_t last_ps_report_data;
 
 /* AAL default delay timer(nano seconds)*/
 #define AAL_DELAY	200000000
@@ -187,6 +188,9 @@ static void ps_work_func(struct work_struct *work)
 		if (cxt->drv_data.ps_data.values[0] != ALSPS_INVALID_VALUE)
 			cxt->is_get_valid_ps_data_after_enable = true;
 	}
+
+	if (cxt->drv_data.ps_data.values[0] != atomic_read(&last_ps_report_data))
+		atomic_set(&last_ps_report_data, cxt->drv_data.ps_data.values[0]);
 
 	ps_data_report(cxt->drv_data.ps_data.values[0],
 	cxt->drv_data.ps_data.status);
@@ -536,6 +540,7 @@ static int ps_enable_and_batch(void)
 		}
 		ALSPS_LOG("ps turn on ps_power done\n");
 
+		atomic_set(&last_ps_report_data, 1);
 		cxt->ps_power = 1;
 		ALSPS_LOG("PS ps_power on done\n");
 	}
@@ -571,7 +576,7 @@ static int ps_enable_and_batch(void)
 			ps_data_report(1, 3);
 		}
 #endif
-		ps_data_report(1, SENSOR_STATUS_ACCURACY_HIGH);
+		ps_data_report(atomic_read(&last_ps_report_data), SENSOR_STATUS_ACCURACY_HIGH);
 		ALSPS_LOG("PS batch done\n");
 	}
 	return 0;
@@ -799,8 +804,11 @@ int ps_report_interrupt_data(int value)
 		}
 	}
 
-	if (cxt->is_ps_batch_enable == false)
+	if (cxt->is_ps_batch_enable == false) {
 		ps_data_report(value, 3);
+		if (value != atomic_read(&last_ps_report_data))
+			atomic_set(&last_ps_report_data, value);
+	}
 
 	return 0;
 }

@@ -35,7 +35,7 @@
 /************************************************/
 /* 	Accelerometer defines section	 	*/
 /************************************************/
-#define MXC400X_DEV_NAME		"MXC400X"
+#define MXC400X_DEV_NAME		"mxc400x"
 
 #define MXC400X_I2C_ADDR		0x15
 #define MXC400X_ID_1			0x02
@@ -73,3 +73,4 @@
 
 
 #endif /* __MXC400X_H__ */
+

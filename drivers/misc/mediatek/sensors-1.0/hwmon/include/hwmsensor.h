@@ -38,7 +38,7 @@
 #define SENSOR_TYPE_GRAVITY							9
 #define SENSOR_TYPE_LINEAR_ACCELERATION				10
 #define SENSOR_TYPE_ROTATION_VECTOR					11
-#define	SENSOR_TYPE_HUMIDITY						12
+#define	SENSOR_TYPE_RELATIVE_HUMIDITY				12
 #define SENSOR_TYPE_AMBIENT_TEMPERATURE				13
 #define SENSOR_TYPE_MAGNETIC_FIELD_UNCALIBRATED		14
 #define SENSOR_TYPE_GAME_ROTATION_VECTOR			15
@@ -60,23 +60,26 @@
 #define SENSOR_TYPE_HEART_BEAT                      31
 #define SENSOR_TYPE_DYNAMIC_SENSOR_META             32
 #define SENSOR_TYPE_ADDITIONAL_INFO                 33
+#define SENSOR_TYPE_LOW_LATENCY_OFFBODY_DETECT		34
+#define SENSOR_TYPE_ACCELEROMETER_UNCALIBRATED		35
+
 
 /* follow mtk add sensor type */
-#define SENSOR_TYPE_PEDOMETER						35
-#define SENSOR_TYPE_IN_POCKET						36
-#define SENSOR_TYPE_ACTIVITY						37
-#define SENSOR_TYPE_PDR								38
-#define SENSOR_TYPE_FREEFALL						39
-#define SENSOR_TYPE_ACCELEROMETER_UNCALIBRATED		40
-#define SENSOR_TYPE_FACE_DOWN						41
-#define SENSOR_TYPE_SHAKE							42
-#define SENSOR_TYPE_BRINGTOSEE						43
-#define SENSOR_TYPE_ANSWER_CALL						44
-#define SENSOR_TYPE_GEOFENCE						45
-#define SENSOR_TYPE_FLOOR_COUNTER					46
-#define SENSOR_TYPE_EKG								47
-#define SENSOR_TYPE_PPG1							48
-#define SENSOR_TYPE_PPG2							49
+#define SENSOR_TYPE_PEDOMETER						55
+#define SENSOR_TYPE_IN_POCKET						56
+#define SENSOR_TYPE_ACTIVITY						57
+#define SENSOR_TYPE_PDR								58
+#define SENSOR_TYPE_FREEFALL						59
+#define SENSOR_TYPE_FLAT							60
+#define SENSOR_TYPE_FACE_DOWN						61
+#define SENSOR_TYPE_SHAKE							62
+#define SENSOR_TYPE_BRINGTOSEE						63
+#define SENSOR_TYPE_ANSWER_CALL						64
+#define SENSOR_TYPE_GEOFENCE						65
+#define SENSOR_TYPE_FLOOR_COUNTER					66
+#define SENSOR_TYPE_EKG								67
+#define SENSOR_TYPE_PPG1							68
+#define SENSOR_TYPE_PPG2							69
 /* end sensor type */
 /*---------------------------------------------------------------------------*/
 #define ID_BASE							0
@@ -88,12 +91,11 @@
 #define ID_LIGHT						(ID_BASE + SENSOR_TYPE_LIGHT - 1)
 #define ID_PRESSURE						(ID_BASE + SENSOR_TYPE_PRESSURE - 1)
 #define ID_TEMPRERATURE					(ID_BASE + SENSOR_TYPE_TEMPERATURE - 1)
-#define ID_HUMIDITY						(ID_BASE + SENSOR_TYPE_HUMIDITY - 1)
 #define ID_PROXIMITY					(ID_BASE + SENSOR_TYPE_PROXIMITY - 1)
 #define ID_GRAVITY						(ID_BASE + SENSOR_TYPE_GRAVITY - 1)
 #define ID_LINEAR_ACCELERATION			(ID_BASE + SENSOR_TYPE_LINEAR_ACCELERATION - 1)
 #define ID_ROTATION_VECTOR				(ID_BASE + SENSOR_TYPE_ROTATION_VECTOR - 1)
-#define ID_RELATIVE_HUMIDITY			(ID_BASE + SENSOR_TYPE_HUMIDITY - 1)
+#define ID_RELATIVE_HUMIDITY			(ID_BASE + SENSOR_TYPE_RELATIVE_HUMIDITY - 1)
 #define ID_AMBIENT_TEMPERATURE			(ID_BASE + SENSOR_TYPE_AMBIENT_TEMPERATURE - 1)
 #define ID_MAGNETIC_UNCALIBRATED		(ID_BASE + SENSOR_TYPE_MAGNETIC_FIELD_UNCALIBRATED - 1)
 #define ID_GAME_ROTATION_VECTOR			(ID_BASE + SENSOR_TYPE_GAME_ROTATION_VECTOR - 1)
@@ -115,13 +117,17 @@
 #define ID_HEART_BEAT					(ID_BASE + SENSOR_TYPE_HEART_BEAT - 1)
 #define ID_DYNAMIC_SENSOR_META			(ID_BASE + SENSOR_TYPE_DYNAMIC_SENSOR_META - 1)
 #define ID_ADDITIONAL_INFO				(ID_BASE + SENSOR_TYPE_ADDITIONAL_INFO - 1)
+#define ID_LOW_LATENCY_OFFBODY_DETECT	(ID_BASE + SENSOR_TYPE_LOW_LATENCY_OFFBODY_DETECT - 1)
+#define ID_ACCELEROMETER_UNCALIBRATED	(ID_BASE + SENSOR_TYPE_ACCELEROMETER_UNCALIBRATED - 1)
+
+
 /* follow mtk add sensor ID */
 #define ID_PEDOMETER                    (ID_BASE + SENSOR_TYPE_PEDOMETER - 1)
 #define ID_IN_POCKET                    (ID_BASE + SENSOR_TYPE_IN_POCKET - 1)
 #define ID_ACTIVITY                     (ID_BASE + SENSOR_TYPE_ACTIVITY - 1)
 #define ID_PDR							(ID_BASE + SENSOR_TYPE_PDR - 1)
 #define ID_FREEFALL						(ID_BASE + SENSOR_TYPE_FREEFALL - 1)
-#define ID_ACCELEROMETER_UNCALIBRATED	(ID_BASE + SENSOR_TYPE_ACCELEROMETER_UNCALIBRATED - 1)
+#define ID_FLAT							(ID_BASE + SENSOR_TYPE_FLAT - 1)
 #define ID_FACE_DOWN                    (ID_BASE + SENSOR_TYPE_FACE_DOWN - 1)
 #define ID_SHAKE                        (ID_BASE + SENSOR_TYPE_SHAKE - 1)
 #define ID_BRINGTOSEE                   (ID_BASE + SENSOR_TYPE_BRINGTOSEE - 1)
@@ -135,63 +141,13 @@
 #define ID_SENSOR_MAX_HANDLE			(ID_BASE + SENSOR_TYPE_PPG2)
 #define ID_NONE							(ID_SENSOR_MAX_HANDLE + 1)
 #define ID_OFFSET                       (1)
-#define ID_SCP_MAX_SENSOR_TYPE			(57)
+#define ID_SCP_MAX_SENSOR_TYPE			(69)
 
 #define MAX_ANDROID_SENSOR_NUM			(ID_SENSOR_MAX_HANDLE + 1)
 #define MAX_SENSOR_DATA_UPDATE_ONCE     (20)
 
-
-/*---------------------------------------------------------------------------*/
-#define SENSOR_ACCELEROMETER			(1 << ID_ACCELEROMETER)
-#define SENSOR_MAGNETIC					(1 << ID_MAGNETIC)
-#define SENSOR_ORIENTATION				(1 << ID_ORIENTATION)
-#define SENSOR_GYROSCOPE				(1 << ID_GYROSCOPE)
-#define SENSOR_LIGHT					(1 << ID_LIGHT)
-#define SENSOR_HUMIDITY					(1 << ID_HUMIDITY)
-#define SENSOR_PRESSURE					(1 << ID_PRESSURE)
-#define SENSOR_TEMPRERATURE				(1 << ID_TEMPRERATURE)
-#define SENSOR_PROXIMITY				(1 << ID_PROXIMITY)
-#define SENSOR_GRAVITY					(1 << ID_GRAVITY)
-#define SENSOR_LINEAR_ACCELERATION		(1 << ID_LINEAR_ACCELERATION)
-#define SENSOR_ROTATION_VECTOR			(1 << ID_ROTATION_VECTOR)
-#define SENSOR_RELATIVE_HUMIDITY		(1 << ID_RELATIVE_HUMIDITY)
-#define SENSOR_AMBIENT_TEMPERATURE		(1 << ID_AMBIENT_TEMPERATURE)
-#define SENSOR_MAGNETIC_UNCALIBRATED	(1 << ID_MAGNETIC_UNCALIBRATED)
-#define SENSOR_GAME_ROTATION_VECTOR		(1 << ID_GAME_ROTATION_VECTOR)
-#define SENSOR_GYROSCOPE_UNCALIBRATED	(1 << ID_GYROSCOPE_UNCALIBRATED)
-
-#define SENSOR_SIGNIFICANT_MOTION           (1 << ID_SIGNIFICANT_MOTION)
-#define SENSOR_STEP_DETECTOR                (1 << ID_STEP_DETECTOR)
-#define SENSOR_STEP_COUNTER                 (1 << ID_STEP_COUNTER)
-#define SENSOR_GEOMAGNETIC_ROTATION_VECTOR  (1 << ID_GEOMAGNETIC_ROTATION_VECTOR)
-
-#define SENSOR_HEART_RATE           (1 << ID_HEART_RATE)
-#define SENSOR_TILT_DETECTOR        (1 << ID_TILT_DETECTOR)
-#define SENSOR_WAKE_GESTURE         (1 << ID_WAKE_GESTURE)
-#define SENSOR_GLANCE_GESTURE       (1 << ID_GLANCE_GESTURE)
-#define SENSOR_PICK_UP_GESTURE      (1 << ID_PICK_UP_GESTURE)
-#define SENSOR_WRIST_TITL_GESTURE   (1 << ID_WRIST_TITL_GESTURE)
-
-#define SENSOR_PEDOMETER                    (1 << ID_PEDOMETER)
-#define SENSOR_IN_POCKET                    (1 << ID_IN_POCKET)
-#define SENSOR_ACTIVITY                     (1 << ID_ACTIVITY)
-#define SENSOR_PDR							(1 << ID_PDR)
-#define SENSOR_FREEFALL                     (1 << ID_FREEFALL)
-#define SENSOR_ACCELEROMETER_UNCALIBRATED   (1 << ID_ACCELEROMETER_UNCALIBRATED)
-
-#define SENSOR_FACE_DOWN                    (1 << ID_FACE_DOWN)
-#define SENSOR_SHAKE                        (1 << ID_SHAKE)
-#define SENSOR_BRINGTOSEE                   (1 << ID_BRINGTOSEE)
-#define SENSOR_ANSWER_CALL                   (1 << ID_ANSWER_CALL)
-#define SENSOR_GEOFENCE                      (1 << ID_GEOFENCE)
-#define SENSOR_FLOOR_COUNTER                 (1 << ID_FLOOR_COUNTER)
-
-/*----------------------------------------------------------------------------*/
-#define HWM_INPUTDEV_NAME               "hwmdata"
-#define HWM_SENSOR_DEV_NAME             "hwmsensor"
-#define HWM_SENSOR_DEV                  "/dev/hwmsensor"
 #define C_MAX_HWMSEN_EVENT_NUM          4
-/*----------------------------------------------------------------------------*/
+
 #define ACC_PL_DEV_NAME                 "m_acc_pl"
 #define ACC_INPUTDEV_NAME               "m_acc_input"
 #define ACC_MISC_DEV_NAME               "m_acc_misc"
@@ -316,30 +272,6 @@
 
 #define BIO_MISC_DEV_NAME               "m_bio_misc"
 
-#define EVENT_TYPE_SENSOR				0x01
-#define EVENT_TYPE_SENSOR_EXT				0x02
-#define EVENT_SENSOR_ACCELERATION		SENSOR_ACCELEROMETER
-#define EVENT_SENSOR_MAGNETIC			SENSOR_MAGNETIC
-#define EVENT_SENSOR_ORIENTATION		SENSOR_ORIENTATION
-#define EVENT_SENSOR_GYROSCOPE			SENSOR_GYROSCOPE
-#define EVENT_SENSOR_LIGHT				SENSOR_LIGHT
-#define EVENT_SENSOR_PRESSURE			SENSOR_PRESSURE
-#define EVENT_SENSOR_TEMPERATURE		SENSOR_TEMPRERATURE
-#define EVENT_SENSOR_PROXIMITY			SENSOR_PROXIMITY
-#define EVENT_SENSOR_GRAVITY			SENSOR_PRESSURE
-#define EVENT_SENSOR_LINEAR_ACCELERATION		SENSOR_TEMPRERATURE
-#define EVENT_SENSOR_ROTATION_VECTOR	SENSOR_PROXIMITY
-#define EVENT_TYPE_INPK_VALUE            0x1
-#define EVENT_TYPE_STATIONARY_VALUE      0x2
-
-/*-----------------------------------------------------------------------------*/
-
-enum {
-	HWM_MODE_DISABLE = 0,
-	HWM_MODE_ENABLE = 1,
-};
-
-/*------------sensors data----------------------------------------------------*/
 struct hwm_sensor_data {
 	/* sensor identifier */
 	int sensor;
@@ -360,108 +292,9 @@ struct hwm_sensor_data {
 	uint32_t reserved;
 };
 
-#ifdef CONFIG_COMPAT
-struct compat_hwm_sensor_data {
-	/* sensor identifier */
-	compat_int_t sensor;
-	/* sensor values */
-	union {
-		compat_int_t	values[6];
-		uint8_t probability[12];
-	};
-	/* sensor values divide */
-	compat_uint_t value_divide;
-	/* sensor accuracy */
-	char status;
-	/* whether updata? */
-	compat_int_t update;
-	/* time is in nanosecond */
-	compat_s64 time;
-
-	compat_uint_t reserved;
-};
-#endif
-
-struct hwm_trans_data {
-	struct hwm_sensor_data data[MAX_SENSOR_DATA_UPDATE_ONCE];
-	uint64_t data_type;
-};
-
-#ifdef CONFIG_COMPAT
-struct compat_hwm_trans_data {
-	struct compat_hwm_sensor_data data[MAX_SENSOR_DATA_UPDATE_ONCE];
-	compat_u64 data_type;
-};
-#endif
-
-#define MAX_BATCH_DATA_PER_QUREY    18
-struct batch_trans_data {
-	int numOfDataReturn;
-	int numOfDataLeft;
-	struct hwm_sensor_data data[MAX_BATCH_DATA_PER_QUREY];
-};
-
-#ifdef CONFIG_COMPAT
-struct compat_batch_trans_data {
-	compat_int_t numOfDataReturn;
-	compat_int_t numOfDataLeft;
-	struct compat_hwm_sensor_data data[MAX_BATCH_DATA_PER_QUREY];
-};
-#endif
-
-/*----------------------------------------------------------------------------*/
-#define HWM_IOC_MAGIC           0x91
-
-/* set delay */
-#define HWM_IO_SET_DELAY		_IOW(HWM_IOC_MAGIC, 0x01, uint32_t)
-
-/* wake up */
-#define HWM_IO_SET_WAKE			_IO(HWM_IOC_MAGIC, 0x02)
-
-/* Enable/Disable  sensor */
-#define HWM_IO_ENABLE_SENSOR	_IOW(HWM_IOC_MAGIC, 0x03, uint32_t)
-#define HWM_IO_DISABLE_SENSOR	_IOW(HWM_IOC_MAGIC, 0x04, uint32_t)
-
-/* Enable/Disable sensor */
-#define HWM_IO_ENABLE_SENSOR_NODATA		_IOW(HWM_IOC_MAGIC, 0x05, uint32_t)
-#define HWM_IO_DISABLE_SENSOR_NODATA	_IOW(HWM_IOC_MAGIC, 0x06, uint32_t)
-/* Get sensors data */
-#define HWM_IO_GET_SENSORS_DATA			_IOWR(HWM_IOC_MAGIC, 0x07, struct hwm_trans_data)
-#ifdef CONFIG_COMPAT
-/* set delay */
-#define COMPAT_HWM_IO_SET_DELAY		_IOW(HWM_IOC_MAGIC, 0x01, compat_uint_t)
-
-/* wake up */
-#define COMPAT_HWM_IO_SET_WAKE			_IO(HWM_IOC_MAGIC, 0x02)
-
-/* Enable/Disable  sensor */
-#define COMPAT_HWM_IO_ENABLE_SENSOR	_IOW(HWM_IOC_MAGIC, 0x03, compat_uint_t)
-#define COMPAT_HWM_IO_DISABLE_SENSOR	_IOW(HWM_IOC_MAGIC, 0x04, compat_uint_t)
-
-/* Enable/Disable sensor */
-#define COMPAT_HWM_IO_ENABLE_SENSOR_NODATA		_IOW(HWM_IOC_MAGIC, 0x05, compat_uint_t)
-#define COMPAT_HWM_IO_DISABLE_SENSOR_NODATA	_IOW(HWM_IOC_MAGIC, 0x06, compat_uint_t)
-/* Get sensors data */
-#define COMPAT_HWM_IO_GET_SENSORS_DATA			_IOWR(HWM_IOC_MAGIC, 0x07, struct compat_hwm_trans_data)
-#endif
-/*----------------------------------------------------------------------------*/
-#define BATCH_IOC_MAGIC           0x92
-
-/* Get sensor data */
-#define BATCH_IO_GET_SENSORS_DATA			_IOWR(BATCH_IOC_MAGIC, 0x01, struct batch_trans_data)
-#ifdef CONFIG_COMPAT
-#define COMPAT_BATCH_IO_GET_SENSORS_DATA	_IOWR(BATCH_IOC_MAGIC, 0x01, struct compat_batch_trans_data)
-#endif
-
-/*define sensor operator type---------------------------------------------------*/
-#define SENSOR_DELAY	0X01
-#define	SENSOR_ENABLE	0X02
-#define	SENSOR_GET_DATA	0X04
-
 /**
  * status of each sensor
  */
-
 #define SENSOR_STATUS_UNRELIABLE        0
 #define SENSOR_STATUS_ACCURACY_LOW      1
 #define SENSOR_STATUS_ACCURACY_MEDIUM   2
@@ -469,4 +302,4 @@ struct compat_batch_trans_data {
 
 #define GRAVITY_EARTH_1000           9807	/* about (9.80665f)*1000 */
 
-#endif				/* __HWMSENSOR_H__ */
+#endif

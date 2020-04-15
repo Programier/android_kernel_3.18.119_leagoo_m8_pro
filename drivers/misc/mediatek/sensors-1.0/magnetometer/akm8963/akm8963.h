@@ -114,6 +114,7 @@ Defines a read-only address of the fuse ROM of the AK8963.*/
 #define ECS_IOCTL_GET_ACCEL         _IOR(AKMIO, 0x30, short[3])
 */
 
+#if 0
 /* IOCTLs for Msensor misc. device library */
 #define MSENSOR						   0x83
 /* IOCTLs for AKM library */
@@ -133,6 +134,7 @@ Defines a read-only address of the fuse ROM of the AK8963.*/
 
 #define ECS_IOCTL_GET_OUTBIT		_IOR(MSENSOR, 0x23, char)
 #define ECS_IOCTL_GET_ACCEL		_IOR(MSENSOR, 0x24, short[3])
+#endif
 
 #ifndef DBGPRINT
 #define DBGPRINT(level, format, ...) \

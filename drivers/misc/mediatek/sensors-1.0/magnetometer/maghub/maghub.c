@@ -462,7 +462,7 @@ static long maghub_compat_ioctl(struct file *file, unsigned int cmd, unsigned lo
 		}
 
 		break;
-
+#if 0
 	case COMPAT_MSENSOR_IOCTL_READ_FACTORY_SENSORDATA:
 		if (arg32 == NULL) {
 			MAGN_LOG("invalid argument.");
@@ -475,7 +475,7 @@ static long maghub_compat_ioctl(struct file *file, unsigned int cmd, unsigned lo
 			return ret;
 		}
 		break;
-
+#endif
 	default:
 		MAGN_LOG("%s not supported = 0x%04x", __func__, cmd);
 		ret =  -ENOIOCTLCMD;

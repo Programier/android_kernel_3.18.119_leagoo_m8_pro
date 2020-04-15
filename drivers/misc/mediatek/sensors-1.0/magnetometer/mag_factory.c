@@ -116,8 +116,7 @@ static long compat_mag_factory_unlocked_ioctl(struct file *filp, unsigned int cm
  *	case COMPAT_MSENSOR_IOCTL_SET_CONTROL:
  *	case COMPAT_MSENSOR_IOCTL_SET_MODE:
  */
-	case COMPAT_MSENSOR_IOCTL_SENSOR_ENABLE:
-	case COMPAT_MSENSOR_IOCTL_READ_FACTORY_SENSORDATA: {
+	case COMPAT_MSENSOR_IOCTL_SENSOR_ENABLE: {
 		MAG_LOG("compat_ion_ioctl : MSENSOR_IOCTL_XXX command is 0x%x\n", cmd);
 		return filp->f_op->unlocked_ioctl(filp, cmd,
 			(unsigned long)compat_ptr(arg));

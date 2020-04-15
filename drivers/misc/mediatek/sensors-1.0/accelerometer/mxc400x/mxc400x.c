@@ -19,8 +19,8 @@
  *
  * THIS SOFTWARE IS SPECIFICALLY DESIGNED FOR EXCLUSIVE USE WITH MEMSIC PARTS.
  *
- ******************************************************************************/
 
+ ******************************************************************************/
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
 #include <linux/slab.h>
@@ -42,12 +42,19 @@
 #include "sensors_io.h"
 #include "mxc400x.h"
 
+#if defined(CONFIG_PRIZE_HARDWARE_INFO)
+#include "../../hardware_info/hardware_info.h"
+extern struct hardware_info current_gsensor_info;
+#endif
 
 #define I2C_DRIVERID_MXC400X		120
-//#define SW_CALIBRATION
-#define DRIVER_VERSION				"V60.97.05.01"
-#define GSE_DEBUG_ON          		0
-#define GSE_DEBUG_FUNC_ON     		0
+#define SW_CALIBRATION
+#define DRIVER_VERSION				"V60.97.07.11"
+#define MXC400X_BUF_SIZE 			256
+
+#define GSE_DEBUG_ON          		1
+#define GSE_DEBUG_FUNC_ON     		1
+#if GSE_DEBUG_ON
 /* Log define */
 #define GSE_INFO(fmt, arg...)      	pr_warn("<<-GSE INFO->> "fmt"\n", ##arg)
 #define GSE_ERR(fmt, arg...)          	pr_err("<<-GSE ERROR->> "fmt"\n", ##arg)
@@ -59,7 +66,15 @@
 						if (GSE_DEBUG_FUNC_ON)\
 							pr_debug("<<-GSE FUNC->> Func:%s@Line:%d\n", __func__, __LINE__);\
 					} while (0)
+#else
+//#define GSE_TAG
+#define GSE_INFO(fmt, args...)	do {} while (0)
+#define GSE_ERR(fmt, args...)	do {} while (0)
+#define GSE_DEBUG(fmt, args...)	do {} while (0)
+#define GSE_DEBUG_FUNC()    	do {} while (0)
 
+
+#endif
 #define MXC400X_AXIS_X          	0
 #define MXC400X_AXIS_Y          	1
 #define MXC400X_AXIS_Z          	2
@@ -67,19 +82,28 @@
 #define MXC400X_DATA_LEN        	6
 #define C_MAX_FIR_LENGTH 		(32)
 #define  USE_DELAY
+
 static s16 cali_sensor_data;
+static struct acc_hw accel_cust;
+struct acc_hw *hw = &accel_cust;
 #ifdef USE_DELAY
 static int delay_state = 0;
 #endif
+static atomic_t open_flag = ATOMIC_INIT(0);
+
 static const struct i2c_device_id mxc400x_i2c_id[] = { { MXC400X_DEV_NAME, 0 }, { }, };
 static int mxc400x_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id);
 static int mxc400x_i2c_remove(struct i2c_client *client);
 #ifndef CONFIG_HAS_EARLYSUSPEND
-static int mxc400x_suspend(struct i2c_client *client, pm_message_t msg);
-static int mxc400x_resume(struct i2c_client *client);
+//static int mxc400x_suspend(struct i2c_client *client, pm_message_t msg);
+//static int mxc400x_resume(struct i2c_client *client);
 #endif
+static DECLARE_WAIT_QUEUE_HEAD(open_wq);
 static int  mxc400x_local_init(void);
 static int mxc400x_remove(void);
+static int mxc400x_flush(void);
+
+
 typedef enum {
 	ADX_TRC_FILTER   = 0x01,
 	ADX_TRC_RAWDATA  = 0x02,
@@ -114,7 +138,7 @@ static struct acc_init_info mxc400x_init_info = {
 };
 struct mxc400x_i2c_data {
 		 struct i2c_client *client;
-		 struct acc_hw hw;
+		 struct acc_hw *hw;
 		 struct hwmsen_convert	 cvt;
 		 atomic_t layout;
 		 /*misc*/
@@ -137,11 +161,13 @@ struct mxc400x_i2c_data {
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 		 struct early_suspend	 early_drv;
 #endif
+			bool flush;
 };
 
 #ifdef CONFIG_OF
 static const struct of_device_id accel_of_match[] = {
 	{.compatible = "mediatek,gsensor"},
+	{.compatible = "memsic,mxc4005xc"},
 	{},
 };
 #endif
@@ -156,13 +182,12 @@ static struct i2c_driver mxc400x_i2c_driver = {
 	 },
 	 .probe 			 = mxc400x_i2c_probe,
 	 .remove			 = mxc400x_i2c_remove,
-	#if !defined(CONFIG_HAS_EARLYSUSPEND)
-	 .suspend			 = mxc400x_suspend,
-	 .resume			 = mxc400x_resume,
-	#endif
+	//#if !defined(CONFIG_HAS_EARLYSUSPEND)
+//	 .suspend			 = mxc400x_suspend,
+//	 .resume			 = mxc400x_resume,
+	//#endif
 	 .id_table = mxc400x_i2c_id,
 };
-
 
 
 struct i2c_client      			*mxc400x_i2c_client = NULL;
@@ -212,6 +237,14 @@ static int mxc400x_i2c_read_block(struct i2c_client *client, u8 addr, u8 *data, 
 	return err;
 
 }
+static void mxc400x_power(struct acc_hw *hw, unsigned int on)
+{
+	 static unsigned int power_on = 0;
+
+	 power_on = on;
+}
+
+
 
 static int MXC400X_SaveData(int buf[MXC400X_AXES_NUM])
 {
@@ -287,7 +320,10 @@ static int MXC400X_ReadData(struct i2c_client *client, s16 data[MXC400X_AXES_NUM
 
 #ifdef USE_DELAY
 	if(delay_state){
-		msleep(150);
+
+	  //printk("zby debug mxc400x delay 300ms begin \n");
+		msleep(300);
+
 		delay_state = 0;
 	}
 #endif
@@ -306,8 +342,12 @@ static int MXC400X_ReadData(struct i2c_client *client, s16 data[MXC400X_AXES_NUM
 		data[MXC400X_AXIS_X] = (s16)(buf[0] << 8 | buf[1]) >> 4;
 		data[MXC400X_AXIS_Y] = (s16)(buf[2] << 8 | buf[3]) >> 4;
 		data[MXC400X_AXIS_Z] = (s16)(buf[4] << 8 | buf[5]) >> 4;
-		GSE_DEBUG("reg data x = %d %d y = %d %d z = %d %d\n", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5]);
-
+		{
+			// decrease print log frequence.
+			static unsigned int cycle = 0;
+			if( cycle++%100==0) //print a msg about 2sec 
+				GSE_DEBUG("reg data x = %d %d y = %d %d z = %d %d\n", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5]);
+		}
 #ifdef CONFIG_MXC400X_LOWPASS
 		if(atomic_read(&priv->filter))
 		{
@@ -436,18 +476,18 @@ static int MXC400X_ReadCalibrationEx(struct i2c_client *client, int act[MXC400X_
 
 	return 0;
 }
+
 static int MXC400X_WriteCalibration(struct i2c_client *client, int dat[MXC400X_AXES_NUM])
 {
 	struct mxc400x_i2c_data *obj = i2c_get_clientdata(client);
 	int err = 0;
-	int cali[MXC400X_AXES_NUM];
+	int cali[MXC400X_AXES_NUM], raw[MXC400X_AXES_NUM];
 #ifdef SW_CALIBRATION
 #else
 	int lsb;
 	lsb = mxc400x_offset_resolution.sensitivity;
 	int divisor = obj->reso->sensitivity/lsb;
 #endif
-	int raw[MXC400X_AXES_NUM];
 	if((err = MXC400X_ReadCalibrationEx(client, cali, raw)))	/*offset will be updated in obj->offset*/
 	{
 		GSE_ERR("read offset fail, %d\n", err);
@@ -472,7 +512,7 @@ static int MXC400X_WriteCalibration(struct i2c_client *client, int dat[MXC400X_A
 	obj->cali_sw[MXC400X_AXIS_Y] = obj->cvt.sign[MXC400X_AXIS_Y]*(cali[obj->cvt.map[MXC400X_AXIS_Y]]);
 	obj->cali_sw[MXC400X_AXIS_Z] = 0;//obj->cvt.sign[MXC400X_AXIS_Z]*(cali[obj->cvt.map[MXC400X_AXIS_Z]]);
 #else
-//	int divisor = obj->reso->sensitivity/lsb;//modified
+	int divisor = obj->reso->sensitivity/lsb;//modified
 	obj->offset[MXC400X_AXIS_X] = (s8)(obj->cvt.sign[MXC400X_AXIS_X]*(cali[obj->cvt.map[MXC400X_AXIS_X]])/(divisor));
 	obj->offset[MXC400X_AXIS_Y] = (s8)(obj->cvt.sign[MXC400X_AXIS_Y]*(cali[obj->cvt.map[MXC400X_AXIS_Y]])/(divisor));
 	obj->offset[MXC400X_AXIS_Z] = (s8)(obj->cvt.sign[MXC400X_AXIS_Z]*(cali[obj->cvt.map[MXC400X_AXIS_Z]])/(divisor));
@@ -502,12 +542,19 @@ static int MXC400X_CheckDeviceID(struct i2c_client *client)
 	memset(databuf, 0, sizeof(u8)*10);
 	databuf[0] = MXC400X_REG_ID;
   msleep(12);
-	res = mxc400x_i2c_read_block(client,MXC400X_REG_ID,databuf,0x01);
-	if (res)
+	res = i2c_master_send(client, databuf, 0x01);
+	if(res <= 0)
 	{
-		GSE_ERR("MXC400X Device ID read faild\n");
-		return MXC400X_ERR_I2C;
+		goto exit_MXC400X_CheckDeviceID;
+	}
+	msleep(5);
 
+	databuf[0] = 0x0;
+	res = i2c_master_recv(client, databuf, 0x01);
+
+	if(res <= 0)
+	{
+		goto exit_MXC400X_CheckDeviceID;
 	}
 
 
@@ -521,6 +568,14 @@ static int MXC400X_CheckDeviceID(struct i2c_client *client)
 	GSE_INFO("MXC400X_CheckDeviceID %d done!\n ", databuf[0]);
 
 	return MXC400X_SUCCESS;
+
+exit_MXC400X_CheckDeviceID:
+	if (res <= 0)
+	{
+		GSE_ERR("MXC400X_CheckDeviceID %d failed!\n ", MXC400X_ERR_I2C);
+		return MXC400X_ERR_I2C;
+	}
+	return MXC400X_ERR_I2C;
 }
 
 
@@ -558,6 +613,13 @@ static int MXC400X_SetPowerMode(struct i2c_client *client, bool enable)
 #else
 	msleep(300);
 #endif
+	if (obj_i2c_data->flush) {
+		if (sensor_power) {
+			GSE_ERR("remain flush");
+			mxc400x_flush();
+		} else
+		obj_i2c_data->flush = false;
+	}
 	return MXC400X_SUCCESS;
 }
 static int MXC400X_SetDataFormat(struct i2c_client *client, u8 dataformat)
@@ -594,7 +656,7 @@ static int mxc400x_init_client(struct i2c_client *client, int reset_cali)
 	 int res = 0;
 
 	 GSE_DEBUG_FUNC();
-	 res = MXC400X_SetPowerMode(client, true);
+	 	 res = MXC400X_SetPowerMode(client, true);
 	 if(res != MXC400X_SUCCESS)
 	 {
 		return res;
@@ -602,18 +664,22 @@ static int mxc400x_init_client(struct i2c_client *client, int reset_cali)
 	 res = MXC400X_CheckDeviceID(client);
 	 if(res != MXC400X_SUCCESS)
 	 {
-	 	 GSE_ERR("MXC400X check device id failed\n");
 	 	 return res;
 	 }
 
 	res = MXC400X_SetBWRate(client, MXC400X_BW_50HZ);
 	if(res != MXC400X_SUCCESS )
 	{
-		GSE_ERR("MXC400X Set BWRate failed\n");
 		return res;
 	}
 
 	res = MXC400X_SetDataFormat(client, MXC400X_RANGE_8G);
+	if(res != MXC400X_SUCCESS)
+	{
+		return res;
+	}
+
+	res = MXC400X_SetPowerMode(client, false);
 	if(res != MXC400X_SUCCESS)
 	{
 		return res;
@@ -637,6 +703,12 @@ static int mxc400x_init_client(struct i2c_client *client, int reset_cali)
 	msleep(20);
 
 	return MXC400X_SUCCESS;
+}
+
+static int MXC400X_GetOpenStatus(void)
+{
+	wait_event_interruptible(open_wq, (atomic_read(&open_flag) != 0));
+	return atomic_read(&open_flag);
 }
 
 static int MXC400X_ReadChipInfo(struct i2c_client *client, char *buf, int bufsize)
@@ -681,7 +753,8 @@ static int MXC400X_ReadSensorDataFactory(struct i2c_client *client, char *buf, i
 		GSE_ERR("mxc4005 client is null !!!\n");
 		return MXC400X_ERR_STATUS;
 	}
-	if (atomic_read(&obj->suspend)&& !enable_status )
+
+	if (atomic_read(&obj->suspend)&& !enable_status)
 	{
 		GSE_ERR("mxc4005 sensor in suspend read not data!\n");
 		return MXC400X_ERR_GETGSENSORDATA;
@@ -721,7 +794,7 @@ static int MXC400X_ReadSensorData(struct i2c_client *client, int *buf, int bufsi
 	u8 databuf[20];
 	int acc[MXC400X_AXES_NUM] = {0};
 	int res = 0;
-	GSE_DEBUG_FUNC();
+	//GSE_DEBUG_FUNC();
 
 	memset(databuf, 0, sizeof(u8)*10);
 
@@ -818,6 +891,7 @@ static ssize_t show_sensordata_value(struct device_driver *ddri, char *buf)
 {
 	struct i2c_client *client = mxc400x_i2c_client;
 	int strbuf[MXC400X_BUFSIZE] = {0};
+
 	if(NULL == client)
 	{
 		GSE_ERR("i2c client is null!!\n");
@@ -999,10 +1073,15 @@ static ssize_t show_status_value(struct device_driver *ddri, char *buf)
 		return 0;
 	}
 
+	if(obj->hw)
+	{
 		len += snprintf(buf+len, PAGE_SIZE-len, "CUST: %d %d (%d %d)\n",
-	            obj->hw.i2c_num, obj->hw.direction, obj->hw.power_id, obj->hw.power_vol);
+	            obj->hw->i2c_num, obj->hw->direction, obj->hw->power_id, obj->hw->power_vol);
+	}
+	else
+	{
 		len += snprintf(buf+len, PAGE_SIZE-len, "CUST: NULL\n");
-
+	}
 	return len;
 }
 /*----------------------------------------------------------------------------*/
@@ -1022,7 +1101,7 @@ static ssize_t show_layout_value(struct device_driver *ddri, char *buf)
 	struct mxc400x_i2c_data *data = i2c_get_clientdata(client);
 
 	return sprintf(buf, "(%d, %d)\n[%+2d %+2d %+2d]\n[%+2d %+2d %+2d]\n",
-		data->hw.direction,atomic_read(&data->layout),	data->cvt.sign[0], data->cvt.sign[1],
+		data->hw->direction,atomic_read(&data->layout),	data->cvt.sign[0], data->cvt.sign[1],
 		data->cvt.sign[2],data->cvt.map[0], data->cvt.map[1], data->cvt.map[2]);
 }
 /*----------------------------------------------------------------------------*/
@@ -1039,13 +1118,13 @@ static ssize_t store_layout_value(struct device_driver *ddri, const char *buf, s
 		{
 			GSE_ERR("HWMSEN_GET_CONVERT function error!\r\n");
 		}
-		else if(!hwmsen_get_convert(data->hw.direction, &data->cvt))
+		else if(!hwmsen_get_convert(data->hw->direction, &data->cvt))
 		{
-			GSE_ERR("invalid layout: %d, restore to %d\n", layout, data->hw.direction);
+			GSE_ERR("invalid layout: %d, restore to %d\n", layout, data->hw->direction);
 		}
 		else
 		{
-			GSE_ERR("invalid layout: (%d, %d)\n", layout, data->hw.direction);
+			GSE_ERR("invalid layout: (%d, %d)\n", layout, data->hw->direction);
 			hwmsen_get_convert(0, &data->cvt);
 		}
 	}
@@ -1056,7 +1135,6 @@ static ssize_t store_layout_value(struct device_driver *ddri, const char *buf, s
 
 	return count;
 }
-
 static DRIVER_ATTR(chipinfo,	S_IWUSR | S_IRUGO, show_chipinfo_value,		NULL);
 static DRIVER_ATTR(sensordata,	S_IWUSR | S_IRUGO, show_sensordata_value,	NULL);
 static DRIVER_ATTR(cali,	S_IWUSR | S_IRUGO, show_cali_value,		store_cali_value);
@@ -1273,6 +1351,13 @@ static long mxc400x_compat_ioctl(struct file *file, unsigned int cmd,
 					GSE_ERR("COMPAT_GSENSOR_IOCTL_WRITE_REG is failed!\n");
 				}
 				break;
+		case COMPAT_GSENSOR_IOCTL_GET_OPEN_STATUS:
+			err = file->f_op->unlocked_ioctl(file, GSENSOR_IOCTL_GET_OPEN_STATUS, (unsigned long)arg64);
+			if(err < 0)
+				{
+					GSE_ERR("COMPAT_GSENSOR_IOCTL_GET_OPEN_STATUS is failed!\n");
+				}
+				break;
 		default:
 			 GSE_ERR("%s not supported = 0x%04x", __FUNCTION__, cmd);
 			 return -ENOIOCTLCMD;
@@ -1286,7 +1371,7 @@ static long mxc400x_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned
 
 	struct i2c_client *client = (struct i2c_client*)file->private_data;
 	struct mxc400x_i2c_data *obj = (struct mxc400x_i2c_data*)i2c_get_clientdata(client);
-	char strbuf[MXC400X_BUFSIZE] ={0};
+	char strbuf[MXC400X_BUFSIZE] = {0};
 	void __user *data;
 	struct SENSOR_DATA sensor_data;
 	int err = 0;
@@ -1299,6 +1384,9 @@ static long mxc400x_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned
 	u8 buf;
 	u8 reg[2];
 	int temp_flag = 0;
+	int status;
+
+	//GSE_DEBUG_FUNC();
 
 	if(_IOC_DIR(cmd) & _IOC_READ)
 	{
@@ -1430,6 +1518,15 @@ static long mxc400x_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned
 				break;
 			}
 			break;
+		case GSENSOR_IOCTL_GET_OPEN_STATUS:
+			data = (void __user*)arg;
+			status = MXC400X_GetOpenStatus();
+			if(copy_to_user(data, &status, sizeof(status)))
+			{
+				GSE_ERR("copy_to_user failed.\n");
+				return -EFAULT;
+			}
+			break;
 		case GSENSOR_IOCTL_GET_DELAY:
 			break;
 		case GSENSOR_IOCTL_GET_STATUS:
@@ -1458,7 +1555,7 @@ static long mxc400x_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned
 				err = -EINVAL;
 				break;
 			}
-			if(copy_to_user(data, &(obj->hw.direction), sizeof(obj->hw.direction)))
+			if(copy_to_user(data, &(obj->hw->direction), sizeof(obj->hw->direction)))
 			{
 				err = -EFAULT;
 				break;
@@ -1589,18 +1686,14 @@ static struct file_operations mxc400x_fops = {
 #endif
 };
 
-//static struct accel_factory_public mxc400x_device = {
-//	.gain = 1,
-//	.sensitivity = 1,
-//	.fops = &mxc400x_fops,
-//};
-
 static struct miscdevice mxc400x_device = {
 		 .minor = MISC_DYNAMIC_MINOR,
-		 .name = "gsensor",
+		 .name = "mxc4005xc",
 		 .fops = &mxc400x_fops,
 };
+
 #ifndef CONFIG_HAS_EARLYSUSPEND
+#if 0
 static int mxc400x_suspend(struct i2c_client *client, pm_message_t msg)
 {
 	 struct mxc400x_i2c_data *obj = i2c_get_clientdata(client);
@@ -1615,12 +1708,15 @@ static int mxc400x_suspend(struct i2c_client *client, pm_message_t msg)
 		 }
 		 mutex_lock(&mxc400x_mutex);
 		 atomic_set(&obj->suspend, 1);
-		 err = MXC400X_SetPowerMode(obj->client, false);
-		 if(err)
+		 if(!enable_status)
 		 {
-			 GSE_ERR("write power control fail!!\n");
-			 mutex_unlock(&mxc400x_mutex);
-			 return -EINVAL;
+			err = MXC400X_SetPowerMode(obj->client, false);
+			if(err)
+			{
+				GSE_ERR("write power control fail!!\n");
+				mutex_unlock(&mxc400x_mutex);
+				return -EINVAL;
+			}
 		 }
 		 mutex_unlock(&mxc400x_mutex);
 	 }
@@ -1639,17 +1735,21 @@ static int mxc400x_resume(struct i2c_client *client)
 		return -EINVAL;
 	}
 	mutex_lock(&mxc400x_mutex);
-	err = MXC400X_SetPowerMode(client, true);
-	if(err != MXC400X_SUCCESS)
+	if(enable_status)
 	{
-		GSE_ERR("Set PowerMode fail!!\n");
-		mutex_unlock(&mxc400x_mutex);
-		return -EINVAL;
+		err = MXC400X_SetPowerMode(client, true);
+		if(err != MXC400X_SUCCESS)
+		{
+			GSE_ERR("Set PowerMode fail!!\n");
+			mutex_unlock(&mxc400x_mutex);
+			return -EINVAL;
+		}
 	}
 	atomic_set(&obj->suspend, 0);
 	mutex_unlock(&mxc400x_mutex);
 	return err;
 }
+#endif
 #else /*CONFIG_HAS_EARLY_SUSPEND is defined*/
 
 static void mxc400x_early_suspend(struct early_suspend *h)
@@ -1664,13 +1764,17 @@ static void mxc400x_early_suspend(struct early_suspend *h)
 	 }
 	mutex_lock(&mxc400x_mutex);
 	atomic_set(&obj->suspend, 1);
-	if(err = MXC400X_SetPowerMode(obj->client, false))
+	if(!enable_status)
 	{
-		GSE_ERR("write power control fail!!\n");
-		mutex_unlock(&mxc400x_mutex);
-		return;
+		if(err = MXC400X_SetPowerMode(obj->client, false))
+		{
+			GSE_ERR("write power control fail!!\n");
+			mutex_unlock(&mxc400x_mutex);
+			return;
+		}
 	}
 	mutex_unlock(&mxc400x_mutex);
+	mxc400x_power(obj->hw, 0);
 }
 
 static void mxc400x_late_resume(struct early_suspend *h)
@@ -1684,19 +1788,24 @@ static void mxc400x_late_resume(struct early_suspend *h)
 		 return;
 	 }
 
+	 mxc400x_power(obj->hw, 1);
 	 mutex_lock(&mxc400x_mutex);
-	 err = MXC400X_SetPowerMode(client, true);
-	if(err != MXC400X_SUCCESS)
+	 if(enable_status)
 	{
-		GSE_ERR("Set PowerMode fail!!\n");
-		 mutex_unlock(&mxc400x_mutex);
-		 return -EINVAL;
-	 }
+		err = MXC400X_SetPowerMode(client, true);
+		if(err != MXC400X_SUCCESS)
+		{
+			GSE_ERR("Set PowerMode fail!!\n");
+			mutex_unlock(&mxc400x_mutex);
+			return -EINVAL;
+		}
+	}
 	 atomic_set(&obj->suspend, 0);
 	 mutex_unlock(&mxc400x_mutex);
 }
 
 #endif /*CONFIG_HAS_EARLYSUSPEND*/
+
 // if use  this typ of enable , Gsensor should report inputEvent(x, y, z ,stats, div) to HAL
 static int mxc400x_open_report_data(int open)
 {
@@ -1714,10 +1823,12 @@ static int mxc400x_enable_nodata(int en)
 	if(1==en)
 	{
 		power = true;
+		atomic_set(&open_flag, 1);
 	}
 	if(0==en)
 	{
 		power = false;
+		atomic_set(&open_flag, 0);
 	}
 	res = MXC400X_SetPowerMode(obj_i2c_data->client, power);
 	if(res != MXC400X_SUCCESS)
@@ -1727,23 +1838,11 @@ static int mxc400x_enable_nodata(int en)
 	}
 	GSE_DEBUG("MXC400X_enable_nodata OK en = %d sensor_power = %d\n", en, sensor_power);
 	enable_status = en;
+	if(enable_status)
+	{
+		wake_up(&open_wq);
+	}
 	return 0;
-}
-
-static int gsensor_set_batch(int flag, int64_t samplingPeriodNs, int64_t maxBatchReportLatencyNs)
-{
-	int value = 0;
-
-	value = (int)samplingPeriodNs/1000/1000;
-	/*Fix Me*/
-	GSE_INFO("mxc400x set delay = (%d) OK!\n", value);
-
-	return 0;
-
-}
-static int gsensor_flush(void)
-{
-	return acc_flush_report();
 }
 
 static int mxc400x_set_delay(u64 ns)
@@ -1763,17 +1862,204 @@ static int mxc400x_get_data(int* x ,int* y,int* z, int* status)
 
 	return 0;
 }
+static int mxc400x_batch(int flag, int64_t samplingPeriodNs, int64_t maxBatchReportLatencyNs)
+{
+	return 0;
+}
+
+static int mxc400x_flush(void)
+{
+	int err = 0;
+	/*Only flush after sensor was enabled*/
+	if (!sensor_power) {
+		obj_i2c_data->flush = true;
+		return 0;
+	}
+	err = acc_flush_report();
+	if (err >= 0)
+		obj_i2c_data->flush = false;
+	return err;
+}
+
+static int mcx400x_factory_enable_sensor(bool enabledisable, int64_t sample_periods_ms)
+{
+	int err;
+
+	err = mxc400x_enable_nodata(enabledisable == true ? 1 : 0);
+	if (err) {
+		GSE_ERR("%s enable sensor failed!\n", __func__);
+		return -1;
+	}
+	err = mxc400x_batch(0, sample_periods_ms * 1000000, 0);
+	if (err) {
+		GSE_ERR("%s enable set batch failed!\n", __func__);
+		return -1;
+	}
+	return 0;
+}
+static int mcx400x_factory_get_data(int32_t data[3], int *status)
+{
+	return mxc400x_get_data(&data[0], &data[1], &data[2], status);
+
+}
+static int mcx400x_factory_get_raw_data(int32_t data[3])
+{
+	char strbuf[MXC400X_BUF_SIZE] = { 0 };
+
+	MXC400X_ReadRawData(mxc400x_i2c_client, strbuf);
+	GSE_ERR("support mxc400x_factory_get_raw_data!\n");
+	return 0;
+}
+static int mcx400x_factory_enable_calibration(void)
+{
+	return 0;
+}
+static int mcx400x_factory_clear_cali(void)
+{
+	int err = 0;
+
+	err = MXC400X_ResetCalibration(mxc400x_i2c_client);
+	if (err) {
+		GSE_ERR("MXC400X_ResetCalibration failed!\n");
+		return -1;
+	}
+	return 0;
+}
+static int mcx400x_factory_set_cali(int32_t data[3])
+{
+	int err = 0;
+	int cali[3] = { 0 };
+
+	/* obj */
+	//obj_i2c_data->cali_sw[MXC400X_AXIS_X] += data[0];
+	//obj_i2c_data->cali_sw[MXC400X_AXIS_Y] += data[1];
+	//obj_i2c_data->cali_sw[MXC400X_AXIS_Z] += data[2];
+
+	cali[MXC400X_AXIS_X] = data[0] * gsensor_gain.x / GRAVITY_EARTH_1000;
+	cali[MXC400X_AXIS_Y] = data[1] * gsensor_gain.y / GRAVITY_EARTH_1000;
+	cali[MXC400X_AXIS_Z] = data[2] * gsensor_gain.z / GRAVITY_EARTH_1000;
+	err = MXC400X_WriteCalibration(mxc400x_i2c_client, cali);
+	if (err) {
+		GSE_ERR("mxc400x_WriteCalibration failed!\n");
+		return -1;
+	}
+	return 0;
+}
+static int mcx400x_factory_get_cali(int32_t data[3])
+{
+	data[0] = obj_i2c_data->cali_sw[MXC400X_AXIS_X];
+	data[1] = obj_i2c_data->cali_sw[MXC400X_AXIS_Y];
+	data[2] = obj_i2c_data->cali_sw[MXC400X_AXIS_Z];
+	return 0;
+}
+static int mcx400x_factory_do_self_test(void)
+{
+	return 0;
+}
+
+#if 0//wff
+static int mxc400x_factory_read_reg(int32_t data[2])
+{
+	u8 reg[2];
+	int err = 0;
+	reg[0] = data[0];
+	reg[1] = data[1];
+	err = mxc400x_i2c_read_block(mxc400x_i2c_client, reg[0], &reg[1], 1);
+		if(err <= 0)
+			{
+				GSE_ERR("read reg failed!\n");
+				err = -EFAULT;
+				
+			}
+	return err;
+}
+
+static int mxc400x_factory_write_reg(int32_t data[2])
+{
+	u8 reg[2];
+	int err = 0;
+	reg[0] = data[0];
+	reg[1] = data[1];
+	err = i2c_master_send(mxc400x_i2c_client, reg, 0x2);
+	if(err <= 0)
+			{
+				GSE_ERR("write reg failed!\n");
+				err = -EFAULT;
+				
+			}
+	return err;
+}
+
+static int mxc400x_factory_get_layout(void)
+{
+	
+	return hw->direction;
+}
+
+static int mxc400x_factory_set_data(int32_t data[3])
+{
+
+    MXC400X_SaveData(data);
+	return 0;
+}
+
+static int mxc400x_factory_set_temp(void)
+{
+	
+	u8 addr = MXC400X_REG_TEMP;
+	int err = 0;
+	s8 temp = 0;
+
+	
+	if((err = mxc400x_i2c_read_block(mxc400x_i2c_client, addr, &temp, 1)))
+	{
+		GSE_ERR("error: %d\n", err);
+	}
+	return err;
+}
+
+static int mxc400x_factory_read_sensor_data(void)
+{
+char strbuf[MXC400X_BUFSIZE] = {0};
+		if(!sensor_power)
+			{
+				MXC400X_SetPowerMode(mxc400x_i2c_client,true);
+			}
+			MXC400X_ReadSensorDataFactory(mxc400x_i2c_client, strbuf, MXC400X_BUFSIZE);
+			return 0;
+}
+#endif		
+
+static struct accel_factory_fops mxc400x_factory_fops = {
+	.enable_sensor = mcx400x_factory_enable_sensor,
+	.get_data = mcx400x_factory_get_data,
+	.get_raw_data = mcx400x_factory_get_raw_data,
+	.enable_calibration = mcx400x_factory_enable_calibration,
+	.clear_cali = mcx400x_factory_clear_cali,
+	.set_cali = mcx400x_factory_set_cali,
+	.get_cali = mcx400x_factory_get_cali,
+	.do_self_test = mcx400x_factory_do_self_test,
+};
+
+static struct accel_factory_public mxc400x_factory_device = {
+	.gain = 1,
+	.sensitivity = 1,
+	.fops = &mxc400x_factory_fops,
+};
+
+
 /*----------------------------------------------------------------------------*/
 static int mxc400x_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
-	struct i2c_client *new_client = NULL;
-	struct mxc400x_i2c_data *obj = NULL;
+	struct i2c_client *new_client;
+	struct mxc400x_i2c_data *obj;
 
 	int err = 0;
 
 	struct acc_control_path ctl={0};
 	struct acc_data_path data={0};
-	GSE_DEBUG_FUNC();
+	
+	printk("<<-GSE FUNC->> Func:%s@Line:%d\n", __func__, __LINE__);
 	GSE_INFO("driver version = %s\n",DRIVER_VERSION);
 
 	if(!(obj = kzalloc(sizeof(*obj), GFP_KERNEL)))
@@ -1782,18 +2068,25 @@ static int mxc400x_i2c_probe(struct i2c_client *client, const struct i2c_device_
 		goto exit;
 	}
 
+	memset(obj, 0, sizeof(struct mxc400x_i2c_data));	
 
-	err = get_accel_dts_func(client->dev.of_node, &obj->hw);
+	err = get_accel_dts_func(client->dev.of_node, hw);
 	if (err < 0) {
-		GSE_ERR("get dts info fail\n");
+		printk("get cust_baro dts info fail\n");
 		goto exit_kfree;
 	}
-	atomic_set(&obj->layout, obj->hw.direction);
-	err = hwmsen_get_convert(obj->hw.direction, &obj->cvt);
-	if (0 != err) {
-		GSE_ERR("invalid direction: %d\n", obj->hw.direction);
-		goto exit_kfree;
-	}
+	printk("<<-GSE INFO->> mxc400x hw->i2c_num=0x%x\n",hw->i2c_num);
+	printk("<<-GSE INFO->> mxc400x hw->i2c_addr[0]=0x%x\n",hw->i2c_addr[0]);
+	printk("<<-GSE INFO->> mxc400x hw->direction=0x%x\n",hw->direction);
+
+	obj->hw = hw;
+	//client->addr=obj->hw->i2c_addr[0];
+	atomic_set(&obj->layout, obj->hw->direction);
+	if((err = hwmsen_get_convert(obj->hw->direction, &obj->cvt)))
+	{
+		GSE_ERR("invalid direction: %d\n", obj->hw->direction);
+		goto exit;
+	}	
 
 	obj_i2c_data = obj;
 	obj->client = client;
@@ -1802,7 +2095,7 @@ static int mxc400x_i2c_probe(struct i2c_client *client, const struct i2c_device_
 
 	atomic_set(&obj->trace, 0);
 	atomic_set(&obj->suspend, 0);
-
+	init_waitqueue_head(&open_wq);
 
 #ifdef CONFIG_MXC400X_LOWPASS
 	if(obj->hw->firlen > C_MAX_FIR_LENGTH)
@@ -1825,13 +2118,17 @@ static int mxc400x_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	if((err = mxc400x_init_client(new_client, 1)))
 	{
 		goto exit_init_failed;
+	}	
+
+	if((err = accel_factory_device_register(&mxc400x_factory_device)))
+	{
+		GSE_ERR("mxc400x_device register failed\n");
+		goto exit_misc_device_register_failed;
 	}
 
-	ctl.is_use_common_factory = false;
-	/* factory */
-	err = accel_factory_device_register(&mxc400x_device);
-	if (err) {
-		GSE_ERR("mxc400x_device register failed.\n");
+	if((err = misc_register(&mxc400x_device)))
+	{
+		GSE_ERR("mxc400x_device register failed\n");
 		goto exit_misc_device_register_failed;
 	}
 
@@ -1839,13 +2136,13 @@ static int mxc400x_i2c_probe(struct i2c_client *client, const struct i2c_device_
 	{
 		GSE_ERR("create attribute err = %d\n", err);
 		goto exit_create_attr_failed;
-	}
+	}	
 
 	ctl.open_report_data = mxc400x_open_report_data;
 	ctl.enable_nodata = mxc400x_enable_nodata;
 	ctl.set_delay  = mxc400x_set_delay;
-	ctl.batch = gsensor_set_batch;
-	ctl.flush = gsensor_flush;
+	ctl.batch = mxc400x_batch;
+	ctl.flush = mxc400x_flush;
 	ctl.is_report_input_direct = false;
 
 	err = acc_register_control_path(&ctl);
@@ -1863,18 +2160,27 @@ static int mxc400x_i2c_probe(struct i2c_client *client, const struct i2c_device_
 		GSE_ERR("register acc data path err\n");
 		goto exit_kfree;
 	}
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	obj->early_drv.level	 = EARLY_SUSPEND_LEVEL_DISABLE_FB - 1,
 	obj->early_drv.suspend  = mxc400x_early_suspend,
 	obj->early_drv.resume	 = mxc400x_late_resume,
 	register_early_suspend(&obj->early_drv);
 #endif
+
+#if defined(CONFIG_PRIZE_HARDWARE_INFO)
+     strcpy(current_gsensor_info.chip,"mxc400x");
+     sprintf(current_gsensor_info.id,"0x%04x",client->addr);
+     strcpy(current_gsensor_info.vendor,"memsic");
+     strcpy(current_gsensor_info.more,"accelerator");
+#endif
+
 	mxc400x_init_flag = 0;
 	GSE_INFO("%s: OK\n", __func__);
 	return 0;
 
 exit_create_attr_failed:
-	/* i2c_detach_client(new_client); */
+	misc_deregister(&mxc400x_device);
 exit_misc_device_register_failed:
 exit_init_failed:
 exit_kfree:
@@ -1882,10 +2188,6 @@ exit_kfree:
 exit:
 	GSE_ERR("%s: err = %d\n", __func__, err);
 	mxc400x_init_flag = -1;
-	obj = NULL;
-	new_client = NULL;
-	obj_i2c_data = NULL;
-	mxc400x_i2c_client = NULL;
 	return err;
 }
 
@@ -1893,13 +2195,19 @@ static int mxc400x_i2c_remove(struct i2c_client *client)
 {
 	 int err = 0;
 
-	err = mxc400x_delete_attr(&mxc400x_init_info.platform_diver_addr->driver);
-	if (err != 0)
-		GSE_ERR("mxc400x_delete_attr fail: %d\n", err);
+	 if((err = mxc400x_delete_attr(&mxc400x_init_info.platform_diver_addr->driver)))
+	 {
+		 GSE_ERR("mxc400x_delete_attr fail: %d\n", err);
+	 }
+
+	 misc_deregister(&mxc400x_device);
+
+	 ///if((err = hwmsen_detach(ID_ACCELEROMETER)))
+
 
 	 mxc400x_i2c_client = NULL;
 	 i2c_unregister_device(client);
-	 accel_factory_device_deregister(&mxc400x_device);
+	 accel_factory_device_deregister(&mxc400x_factory_device);
 	 kfree(i2c_get_clientdata(client));
 	 return 0;
 }
@@ -1907,15 +2215,14 @@ static int mxc400x_i2c_remove(struct i2c_client *client)
 
 static int mxc400x_local_init(void)
 {
-	GSE_DEBUG_FUNC();
+	printk("<<-GSE FUNC->> Func:%s@Line:%d\n", __func__, __LINE__);
+	mxc400x_power(hw, 1);
 
-	if(i2c_add_driver(&mxc400x_i2c_driver))
-	{
+	if(i2c_add_driver(&mxc400x_i2c_driver)){
 		 GSE_ERR("add driver error\n");
 		 return -1;
 	}
-	if(-1 == mxc400x_init_flag)
-	{
+	if(-1 == mxc400x_init_flag){
 		GSE_ERR("mxc400x_local_init failed mxc400x_init_flag=%d\n",mxc400x_init_flag);
 	   	return -1;
 	}
@@ -1924,19 +2231,17 @@ static int mxc400x_local_init(void)
 static int mxc400x_remove(void)
 {
 	 GSE_DEBUG_FUNC();
+	 mxc400x_power(hw, 0);
 	 i2c_del_driver(&mxc400x_i2c_driver);
 	 return 0;
 }
 
 static int __init mxc400x_driver_init(void)
 {
-
-	GSE_DEBUG_FUNC();
-
 	acc_driver_add(&mxc400x_init_info);
 
 	mutex_init(&mxc400x_mutex);
-
+printk("mxc400x_driver_init");
 	return 0;
 }
 
